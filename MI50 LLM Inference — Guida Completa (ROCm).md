@@ -326,7 +326,7 @@ Sì. Con `Accelerate device_map="auto"` puoi shardar layer tra GPU. Per throughp
 
 ## Licenza
 
-Rilascia questo README con la licenza del tuo repository (es. MIT/Apache-2.0). Le istruzioni qui presenti sono fornite “as-is”, senza garanzia.
+Le istruzioni qui presenti sono fornite “as-is”, senza garanzia.
 
 ---
 
@@ -776,4 +776,4 @@ pkill -f "uvicorn src.server:app" || true
 
 ---
 
-Se vuoi, aggiungo anche un **Dockerfile** con pass-through `/dev/dri/renderD*` (host ROCm), ma per prestazioni e semplicità ti consiglio bare-metal. Dimmi se lo vuoi e lo preparo. 💜
+

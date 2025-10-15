@@ -1,0 +1,23 @@
+[Unit]
+Description=ROCm Ollama-compatible Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=YOUR_USER
+Group=YOUR_USER
+WorkingDirectory=/path/to/ROCm-Ollama-Bypass
+Environment=HF_HOME=/path/to/cache/hf
+Environment=TRANSFORMERS_CACHE=/path/to/cache/hf/transformers
+Environment=TORCH_HOME=/path/to/cache/torch
+Environment=OLLAMA_FAKE_LOGDIR=/path/to/ROCm-Ollama-Bypass/logs
+Environment=OLLAMA_FAKE_LOGLEVEL=INFO
+Environment=PYTHONPATH=/path/to/ROCm-Ollama-Bypass
+ExecStart=/path/to/venv/bin/python app.py "/path/to/model" --host 0.0.0.0 --port 11534 --log-level info
+Restart=always
+RestartSec=5
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

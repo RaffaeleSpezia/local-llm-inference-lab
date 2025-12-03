@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <title>MI50 Chat Console</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; font-family: 'Inter', sans-serif; background: #0f172a; color: #e2e8f0; }
+    .app { display: flex; height: 100vh; }
+    .sidebar { width: 320px; background: #111c33; border-right: 1px solid #1f2a44; display: flex; flex-direction: column; }
+    .sidebar header { padding: 1rem; border-bottom: 1px solid #1f2a44; }
+    .sidebar h1 { margin: 0; font-size: 1.1rem; }
+    .model-selector { width: 100%; margin-top: 0.6rem; padding: 0.4rem; border-radius: 6px; border: 1px solid #24304d; background: #0f172a; color: #e2e8f0; }
+    .new-chat-btn { width: 100%; margin-top: 0.6rem; padding: 0.6rem; border: none; border-radius: 6px; background: #2563eb; color: white; font-weight: 600; cursor: pointer; }
+    .chat-list { flex: 1; overflow-y: auto; padding: 0.5rem 0; }
+    .chat-item { padding: 0.6rem 1rem; border-bottom: 1px solid #182341; cursor: pointer; }
+    .chat-item.active { background: #1b2b4d; }
+    .chat-item h3 { margin: 0; font-size: 0.95rem; }
+    .chat-item small { color: #94a3b8; }
+    .chat-tags { margin-top: 0.4rem; display: flex; flex-wrap: wrap; gap: 0.3rem; }
+    .tag { background: #1d3557; padding: 0.1rem 0.4rem; border-radius: 999px; font-size: 0.7rem; }
+    .chat-area { flex: 1; display: flex; flex-direction: column; }
+    .chat-header { padding: 1rem 1.5rem; border-bottom: 1px solid #1f2a44; display: flex; justify-content: space-between; align-items: center; }
+    .chat-header h2 { margin: 0; font-size: 1.1rem; }
+    .chat-meta { color: #94a3b8; font-size: 0.9rem; }
+    .messages { flex: 1; overflow-y: auto; padding: 1.5rem; background: #0b152d; }
+    .bubble { max-width: 70%; margin-bottom: 1rem; padding: 0.9rem; border-radius: 14px; line-height: 1.4; white-space: pre-wrap; }
+    .bubble.user { background: #1d4ed8; color: white; margin-left: auto; border-bottom-right-radius: 4px; }
+    .bubble.assistant { background: #1e293b; margin-right: auto; border-bottom-left-radius: 4px; }
+    .composer { padding: 1rem 1.5rem; border-top: 1px solid #1f2a44; background: #111c33; }
+    .composer form { display: flex; gap: 0.6rem; }
+    .composer textarea { flex: 1; resize: none; min-height: 60px; border-radius: 10px; border: 1px solid #24304d; background: #0f172a; color: #e2e8f0; padding: 0.8rem; }
+    .composer button { padding: 0 1.4rem; border: none; border-radius: 10px; background: #22c55e; color: #041019; font-weight: 600; cursor: pointer; }
+    @media (max-width: 960px) {
+      .sidebar { display: none; }
+      .app { flex-direction: column; }
+      .chat-area { height: 100vh; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <header>
+        <h1>MI50 Chat</h1>
+        <select id="model-select" class="model-selector"></select>
+        <button class="new-chat-btn" id="new-chat-btn">Nuova chat</button>
+      </header>
+      <div class="chat-list" id="chat-list"></div>
+    </aside>
+
+    <section class="chat-area">
+      <div class="chat-header">
+        <div>
+          <h2 id="chat-title">Seleziona una chat</h2>
+          <div class="chat-meta" id="chat-meta">Modello: --</div>
+        </div>
+        <div id="chat-tags"></div>
+      </div>
+      <div class="messages" id="messages"></div>
+      <div class="composer">
+        <form id="prompt-form">
+          <textarea id="prompt-input" placeholder="Scrivi il prompt..." required></textarea>
+          <button type="submit">Invia</button>
+        </form>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const models = [
+      { label: 'Gemma 7B', value: '/mnt/raid0/gemma-7b' },
+      { label: 'Gemma3 4B IT', value: '/mnt/raid0/gemma3-4b-it' },
+      { label: 'Qwen2.5 Coder 7B', value: '/mnt/raid0/qwen2.5-coder-7b-instruct' },
+      { label: 'Qwen2.5 Coder 14B', value: '/mnt/raid0/qwen2.5-coder-14b-instruct' }
+    ];
+
+    const chatListEl = document.getElementById('chat-list');
+    const messagesEl = document.getElementById('messages');
+    const promptForm = document.getElementById('prompt-form');
+    const promptInput = document.getElementById('prompt-input');
+    const chatTitleEl = document.getElementById('chat-title');
+    const chatMetaEl = document.getElementById('chat-meta');
+    const chatTagsEl = document.getElementById('chat-tags');
+    const modelSelect = document.getElementById('model-select');
+    const newChatBtn = document.getElementById('new-chat-btn');
+
+    let chats = [];
+    let currentChatId = null;
+    let streamingController = null;
+
+    function safeText(el) {
+      if (!el || typeof el.textContent !== 'string') {
+        return '';
+      }
+      return el.textContent;
+    }
+
+    models.forEach(function(m, idx) {
+      var opt = document.createElement('option');
+      opt.value = m.value;
+      opt.textContent = m.label;
+      if (idx === 0) opt.selected = true;
+      modelSelect.appendChild(opt);
+    });
+
+    function fetchJSON(url, opts) {
+      if (!opts) opts = {};
+      return fetch(url, opts).then(function(res) {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+      });
+    }
+
+    function loadChats() {
+      return fetchJSON('/api/chats').then(function(data) {
+        chats = data.chats;
+        renderChatList();
+      });
+    }
+
+    function renderChatList() {
+      chatListEl.innerHTML = '';
+      if (!chats.length) {
+        var empty = document.createElement('div');
+        empty.style.padding = '1rem';
+        empty.textContent = 'Nessuna chat';
+        chatListEl.appendChild(empty);
+        return;
+      }
+      chats.forEach(function(chat) {
+        var div = document.createElement('div');
+        div.className = 'chat-item' + (chat.id === currentChatId ? ' active' : '');
+        div.innerHTML = '<h3>' + chat.title + '</h3><small>' + new Date(chat.updated_at).toLocaleString() + '</small>';
+        if (chat.tags && chat.tags.length) {
+          var tags = document.createElement('div');
+          tags.className = 'chat-tags';
+          chat.tags.forEach(function(tag) {
+            var t = document.createElement('span');
+            t.className = 'tag';
+            t.textContent = tag;
+            tags.appendChild(t);
+          });
+          div.appendChild(tags);
+        }
+        div.addEventListener('click', function() { selectChat(chat.id); });
+        chatListEl.appendChild(div);
+      });
+    }
+
+    function selectChat(chatId) {
+      return fetchJSON('/api/chats/' + chatId).then(function(data) {
+        var chat = data.chat;
+        currentChatId = chatId;
+        chatTitleEl.textContent = chat.title;
+        chatMetaEl.textContent = 'Modello: ' + chat.model;
+        chatTagsEl.innerHTML = '';
+        (chat.tags || []).forEach(function(tag) {
+          var span = document.createElement('span');
+          span.className = 'tag';
+          span.textContent = tag;
+          chatTagsEl.appendChild(span);
+        });
+        renderMessages(chat.messages || []);
+        renderChatList();
+      });
+    }
+
+    function renderMessages(messages) {
+      messagesEl.innerHTML = '';
+      messages.forEach(function(msg) { addBubble(msg.role, msg.content); });
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    function addBubble(role, content, tempId) {
+      var bubble = tempId ? document.getElementById(tempId) : null;
+      if (!bubble) {
+        bubble = document.createElement('div');
+        bubble.className = 'bubble ' + (role === 'user' ? 'user' : 'assistant');
+        if (tempId) bubble.id = tempId;
+        messagesEl.appendChild(bubble);
+      }
+      bubble.textContent = content;
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    function ensureChatExists() {
+      if (currentChatId) return Promise.resolve(currentChatId);
+      var payload = { model: modelSelect.value };
+      return fetchJSON('/api/chats', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }).then(function(data) {
+        currentChatId = data.chat.id;
+        return loadChats().then(function() { return selectChat(currentChatId); }).then(function() { return currentChatId; });
+      });
+    }
+
+    promptForm.addEventListener('submit', function(event) {
+      event.preventDefault();
+      var text = promptInput.value.trim();
+      if (!text) return;
+      ensureChatExists().then(function() {
+        addBubble('user', text);
+        promptInput.value = '';
+        promptInput.focus();
+        streamResponse(text);
+      });
+    });
+
+    function streamResponse(prompt) {
+      if (!currentChatId) return;
+      if (streamingController) streamingController.abort();
+      streamingController = new AbortController();
+      var tempId = 'assistant-' + Date.now();
+      addBubble('assistant', '', tempId);
+      fetch('/api/chats/' + currentChatId + '/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: prompt }),
+        signal: streamingController.signal
+      }).then(function(res) {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        var reader = res.body.getReader();
+        var decoder = new TextDecoder();
+        var buffer = '';
+        function processChunk() {
+          return reader.read().then(function(result) {
+            var value = result.value;
+            var done = result.done;
+            if (done) return;
+            buffer += decoder.decode(value, { stream: true });
+            var lines = buffer.split('
+');
+            buffer = lines.pop();
+            lines.forEach(function(line) {
+              if (!line.trim()) return;
+              try {
+                var data = JSON.parse(line);
+                if (data.error) {
+                  addBubble('assistant', data.error, tempId);
+                } else if (data.response) {
+                  var existing = safeText(document.getElementById(tempId));
+                  addBubble('assistant', existing + data.response, tempId);
+                } else if (data.total_response) {
+                  var bubbleText = safeText(document.getElementById(tempId));
+                  if (!bubbleText) {
+                    addBubble('assistant', data.total_response, tempId);
+                  }
+                }
+              } catch (err) {
+                console.error('Parse errore stream', err);
+              }
+            });
+            return processChunk();
+          });
+        }
+        return processChunk();
+      }).catch(function(err) {
+        addBubble('assistant', 'Errore: ' + err.message, tempId);
+      }).finally(function() {
+        streamingController = null;
+        loadChats().then(function() {
+          if (currentChatId) selectChat(currentChatId);
+        });
+      });
+    }
+
+    newChatBtn.addEventListener('click', function() {
+      currentChatId = null;
+      ensureChatExists();
+    });
+
+    loadChats();
+  </script>
+</body>
+</html>

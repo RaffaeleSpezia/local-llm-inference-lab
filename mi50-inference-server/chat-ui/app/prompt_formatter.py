@@ -1,0 +1,168 @@
+"""Formattatori di prompt specifici per ogni modello."""
+from __future__ import annotations
+from typing import List, Dict
+
+
+def format_gemma_prompt(messages: List[Dict[str, str]]) -> str:
+    """
+    Formatta messaggi per Gemma/Gemma2/Gemma3.
+    Gemma usa <start_of_turn>user / <start_of_turn>model.
+    Non supporta ruolo system separato - va nel primo messaggio user.
+    """
+    formatted_parts = []
+
+    # Cerca system message
+    system_msg = None
+    other_messages = []
+
+    for msg in messages:
+        if msg["role"] == "system":
+            system_msg = msg["content"]
+        else:
+            other_messages.append(msg)
+
+    # Se c'è un system message e c'è almeno un user message,
+    # lo aggiungiamo al primo user message
+    if system_msg and other_messages:
+        first_msg = other_messages[0]
+        if first_msg["role"] == "user":
+            # Inserisci system nel primo user
+            formatted_parts.append("<start_of_turn>user\n")
+            formatted_parts.append(system_msg)
+            formatted_parts.append("\n\n")
+            formatted_parts.append(first_msg["content"])
+            formatted_parts.append("<end_of_turn>\n")
+            other_messages = other_messages[1:]
+        else:
+            # Se il primo non è user, aggiungi system come primo user
+            formatted_parts.append("<start_of_turn>user\n")
+            formatted_parts.append(system_msg)
+            formatted_parts.append("<end_of_turn>\n")
+
+    # Processa gli altri messaggi
+    for msg in other_messages:
+        role = msg["role"]
+        content = msg["content"]
+
+        if role == "user":
+            formatted_parts.append("<start_of_turn>user\n")
+            formatted_parts.append(content)
+            formatted_parts.append("<end_of_turn>\n")
+        elif role in ("assistant", "model"):
+            formatted_parts.append("<start_of_turn>model\n")
+            formatted_parts.append(content)
+            formatted_parts.append("<end_of_turn>\n")
+
+    # Aggiungi il prefisso per la risposta del modello
+    formatted_parts.append("<start_of_turn>model\n")
+
+    return "".join(formatted_parts)
+
+
+def format_qwen_prompt(messages: List[Dict[str, str]]) -> str:
+    """
+    Formatta messaggi per Qwen (ChatML style).
+    Usa <|im_start|>{role}\n{content}<|im_end|>
+    Supporta system, user, assistant.
+    """
+    formatted_parts = []
+
+    for msg in messages:
+        role = msg["role"]
+        content = msg["content"]
+
+        # Normalizza assistant -> assistant
+        if role == "model":
+            role = "assistant"
+
+        formatted_parts.append(f"<|im_start|>{role}\n")
+        formatted_parts.append(content)
+        formatted_parts.append("<|im_end|>\n")
+
+    # Aggiungi il prefisso per la risposta dell'assistente
+    formatted_parts.append("<|im_start|>assistant\n")
+
+    return "".join(formatted_parts)
+
+
+def format_deepseek_prompt(messages: List[Dict[str, str]]) -> str:
+    """
+    Formatta messaggi per DeepSeek-Coder.
+    DeepSeek-Coder usa il formato ChatML come Qwen:
+    <|im_start|>{role}\n{content}<|im_end|>
+
+    Supporta: system, user, assistant
+    """
+    # DeepSeek-Coder usa lo stesso formato di Qwen (ChatML)
+    return format_qwen_prompt(messages)
+
+
+def format_starcoder_prompt(messages: List[Dict[str, str]]) -> str:
+    """
+    Formatta messaggi per StarCoder2.
+    StarCoder è un modello di code completion, NON un chatbot.
+
+    Strategia:
+    - Ignora completamente system message (non serve)
+    - Prende solo l'ultimo messaggio user
+    - Restituisce il codice raw, senza tag
+    - Il modello continua il codice dall'ultimo punto
+
+    Esempio:
+    Input user: "#include <Arduino.h>\\nvoid setup() {"
+    Output modello: "  pinMode(LED_BUILTIN, OUTPUT);\\n}\\n..."
+    """
+    # Trova l'ultimo messaggio user (ignora system e assistant)
+    last_user_content = ""
+
+    for msg in reversed(messages):
+        if msg["role"] == "user":
+            last_user_content = msg["content"]
+            break
+
+    # Restituisci il codice raw, senza nessun tag o prefisso
+    return last_user_content
+
+
+def detect_model_family(model_path: str) -> str:
+    """
+    Rileva la famiglia del modello dal path.
+    Ritorna: "gemma", "qwen", "deepseek", "starcoder", "generic"
+    """
+    model_lower = model_path.lower()
+
+    if "gemma" in model_lower:
+        return "gemma"
+    elif "qwen" in model_lower:
+        return "qwen"
+    elif "deepseek" in model_lower:
+        return "deepseek"
+    elif "starcoder" in model_lower or "star-coder" in model_lower:
+        return "starcoder"
+    else:
+        return "generic"
+
+
+def format_prompt_for_model(model_path: str, messages: List[Dict[str, str]]) -> str:
+    """
+    Formatta il prompt in base al tipo di modello.
+    """
+    family = detect_model_family(model_path)
+
+    if family == "gemma":
+        return format_gemma_prompt(messages)
+    elif family == "qwen":
+        return format_qwen_prompt(messages)
+    elif family == "deepseek":
+        return format_deepseek_prompt(messages)
+    elif family == "starcoder":
+        return format_starcoder_prompt(messages)
+    else:
+        # Formato generico USER: / ASSISTANT:
+        lines = []
+        for msg in messages:
+            role = msg["role"].upper()
+            content = msg["content"]
+            lines.append(f"{role}: {content}")
+        lines.append("ASSISTANT:")
+        return "\n".join(lines)

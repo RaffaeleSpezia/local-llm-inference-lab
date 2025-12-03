@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <title>MI50 Monitoring Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root { color-scheme: dark; }
+    body { font-family: 'Inter', sans-serif; margin: 0; background: #0f172a; color: #e2e8f0; }
+    header { padding: 1rem 2rem; background: #1e293b; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; }
+    .layout { display: flex; gap: 1.5rem; padding: 1.5rem; align-items: flex-start; }
+    .left-column { flex: 3; display: flex; flex-direction: column; gap: 1.2rem; }
+    .right-column { flex: 2; display: flex; flex-direction: column; gap: 1.2rem; }
+    .card { background: #1e293b; border-radius: 16px; padding: 1.25rem 1.5rem; box-shadow: 0 15px 35px rgba(0,0,0,0.35); border: 1px solid #24304a; }
+    h2 { margin-top: 0; font-size: 1.05rem; color: #93c5fd; letter-spacing: 0.02em; }
+    .prompt-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.75rem; }
+    .prompt-meta div { background: #0f172a; border-radius: 10px; padding: 0.85rem; border: 1px solid #1f2937; }
+    .prompt-meta span { font-size: 0.8rem; color: #94a3b8; }
+    .prompt-meta strong { display: block; margin-top: 0.35rem; font-size: 1rem; color: #fbbf24; }
+    pre { background: #0f172a; border: 1px solid #334155; border-radius: 12px; padding: 1.1rem; white-space: pre-wrap; max-height: 360px; overflow-y: auto; margin: 0; }
+    .stream-box { min-height: 380px; height: 45vh; }
+    .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.85rem; }
+    .metric { background: #0f172a; border-radius: 10px; padding: 0.75rem; text-align: center; border: 1px solid #1f283d; }
+    .metric span { display: block; font-size: 0.8rem; color: #94a3b8; }
+    .metric strong { font-size: 1.3rem; color: #fbbf24; }
+    canvas { max-width: 100%; }
+    @media (max-width: 1100px) { .layout { flex-direction: column; } .left-column, .right-column { width: 100%; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1 style="margin:0;font-size:1.35rem;">MI50 Monitoring Dashboard</h1>
+      <small style="color:#94a3b8;">Prompt intercettati, parametri e risorse GPU</small>
+    </div>
+    <div id="status-dot" style="width:16px;height:16px;border-radius:50%;background:#f87171;"></div>
+  </header>
+
+  <main class="layout">
+    <div class="left-column">
+      <section class="card">
+        <h2>Prompt attuale</h2>
+        <div class="prompt-meta">
+          <div><span>Timestamp</span><strong id="prompt-ts">--</strong></div>
+          <div><span>Lunghezza</span><strong id="prompt-length">--</strong></div>
+          <div><span>Stato</span><strong id="prompt-status">In attesa…</strong></div>
+        </div>
+        <pre id="prompt-text" style="margin-top:1rem;">Nessun prompt rilevato</pre>
+      </section>
+
+      <section class="card">
+        <h2>Parametri generazione</h2>
+        <pre id="prompt-options">{}</pre>
+      </section>
+
+      <section class="card">
+        <h2>Streaming risposta</h2>
+        <div id="response-stream" class="stream-box" style="white-space:pre-wrap;overflow-y:auto;background:#0f172a;border:1px solid #334155;border-radius:12px;padding:1rem;">Monitor in ascolto…</div>
+      </section>
+    </div>
+
+    <div class="right-column">
+      <section class="card">
+        <h2>Stato risorse</h2>
+        <div class="metrics-grid">
+          <div class="metric"><span>CPU</span><strong id="cpu-val">--%</strong></div>
+          <div class="metric"><span>RAM</span><strong id="ram-val">--%</strong></div>
+          <div class="metric"><span>VRAM allocata</span><strong id="vram-alloc">-- GB</strong></div>
+          <div class="metric"><span>VRAM riservata</span><strong id="vram-reserved">-- GB</strong></div>
+          <div class="metric"><span>VRAM libera</span><strong id="vram-free">-- GB</strong></div>
+          <div class="metric"><span>GPU temp</span><strong id="gpu-temp">--°C</strong></div>
+          <div class="metric"><span>GPU use</span><strong id="gpu-util">--%</strong></div>
+        </div>
+        <canvas id="vram-chart" height="110" style="margin-top:1rem;"></canvas>
+      </section>
+
+      <section class="card">
+        <h2>Trend GPU</h2>
+        <canvas id="gpu-chart" height="160"></canvas>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    const metricsSocket = new WebSocket(`${location.origin.replace('http', 'ws')}/ws/metrics`);
+    const promptSocket = new WebSocket(`${location.origin.replace('http', 'ws')}/ws/prompts`);
+    const statusDot = document.getElementById('status-dot');
+    const cpuVal = document.getElementById('cpu-val');
+    const ramVal = document.getElementById('ram-val');
+    const vramAlloc = document.getElementById('vram-alloc');
+    const vramReserved = document.getElementById('vram-reserved');
+    const vramFree = document.getElementById('vram-free');
+    const gpuTemp = document.getElementById('gpu-temp');
+    const gpuUtil = document.getElementById('gpu-util');
+    const promptTs = document.getElementById('prompt-ts');
+    const promptLen = document.getElementById('prompt-length');
+    const promptStatus = document.getElementById('prompt-status');
+    const promptText = document.getElementById('prompt-text');
+    const promptOptions = document.getElementById('prompt-options');
+    const responseBox = document.getElementById('response-stream');
+
+    const vramCtx = document.getElementById('vram-chart').getContext('2d');
+    const vramData = { labels: [], datasets: [
+      { label: 'VRAM allocata (GB)', borderColor: '#38bdf8', data: [], tension: 0.35 },
+      { label: 'VRAM riservata (GB)', borderColor: '#fbbf24', data: [], tension: 0.35 }
+    ]};
+    const vramChart = new Chart(vramCtx, {
+      type: 'line', data: vramData,
+      options: { responsive: true, plugins: { legend: { labels: { color: '#cbd5f5' } } },
+        scales: { x: { ticks: { color: '#94a3b8' } }, y: { ticks: { color: '#94a3b8' }, suggestedMin: 0 } } }
+    });
+
+    const gpuCtx = document.getElementById('gpu-chart').getContext('2d');
+    const gpuData = { labels: [], datasets: [
+      { label: 'Temp °C', borderColor: '#f97316', data: [], tension: 0.35, yAxisID: 'y' },
+      { label: 'Util %', borderColor: '#34d399', data: [], tension: 0.35, yAxisID: 'y1' }
+    ]};
+    const gpuChart = new Chart(gpuCtx, {
+      type: 'line', data: gpuData,
+      options: { responsive: true, plugins: { legend: { labels: { color: '#cbd5f5' } } },
+        scales: {
+          y: { position: 'left', ticks: { color: '#94a3b8' }, suggestedMin: 0 },
+          y1: { position: 'right', ticks: { color: '#94a3b8' }, suggestedMin: 0, suggestedMax: 100, grid: { drawOnChartArea: false } }
+        } }
+    });
+
+    const formatPercent = (v) => (v != null ? `${v.toFixed(1)}%` : '--%');
+    const formatGb = (v) => (v != null ? `${v.toFixed(2)} GB` : '-- GB');
+
+    metricsSocket.onopen = () => { statusDot.style.background = '#22c55e'; };
+    metricsSocket.onclose = () => { statusDot.style.background = '#f87171'; };
+    metricsSocket.onmessage = (event) => {
+      const payload = JSON.parse(event.data).payload;
+      if (!payload) return;
+      cpuVal.textContent = formatPercent(payload.cpu_percent);
+      ramVal.textContent = formatPercent(payload.ram_percent);
+      const gpu = payload.gpu || {};
+      gpuTemp.textContent = gpu.temperature_c != null ? `${gpu.temperature_c.toFixed(1)}°C` : '--°C';
+      gpuUtil.textContent = formatPercent(gpu.utilization_percent);
+      vramFree.textContent = formatGb(gpu.vram_free_gb);
+      if (payload.memory) {
+        vramAlloc.textContent = formatGb(payload.memory.allocated_gb ?? 0);
+        vramReserved.textContent = formatGb(payload.memory.reserved_gb ?? 0);
+        const label = new Date(payload.ts).toLocaleTimeString();
+        vramData.labels.push(label);
+        vramData.datasets[0].data.push(payload.memory.allocated_gb || 0);
+        vramData.datasets[1].data.push(payload.memory.reserved_gb || 0);
+        gpuData.labels.push(label);
+        gpuData.datasets[0].data.push(gpu.temperature_c ?? null);
+        gpuData.datasets[1].data.push(gpu.utilization_percent ?? null);
+        [vramData.labels, gpuData.labels].forEach((arr) => { if (arr.length > 60) arr.shift(); });
+        vramData.datasets.forEach((ds) => { if (ds.data.length > 60) ds.data.shift(); });
+        gpuData.datasets.forEach((ds) => { if (ds.data.length > 60) ds.data.shift(); });
+        vramChart.update('none');
+        gpuChart.update('none');
+      }
+    };
+
+    promptSocket.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+      if (!msg) return;
+      if (msg.type === 'start') {
+        promptTs.textContent = msg.ts || '--';
+        promptLen.textContent = msg.prompt_length != null ? `${msg.prompt_length} chars` : '--';
+        promptText.textContent = msg.prompt || 'Nessun prompt rilevato';
+        promptOptions.textContent = JSON.stringify(msg.options || {}, null, 2);
+        promptStatus.textContent = `In esecuzione (${msg.endpoint || 'generate'})`;
+        responseBox.textContent = '';
+      } else if (msg.type === 'token') {
+        responseBox.textContent += msg.delta || '';
+        responseBox.scrollTop = responseBox.scrollHeight;
+      } else if (msg.type === 'done') {
+        promptStatus.textContent = `Completato (${msg.done_reason || 'stop'})`;
+        if (!responseBox.textContent && msg.total_response) {
+          responseBox.textContent = msg.total_response;
+        }
+      }
+    };
+  </script>
+</body>
+</html>

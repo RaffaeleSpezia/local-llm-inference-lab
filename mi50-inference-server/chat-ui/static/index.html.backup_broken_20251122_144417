@@ -1,0 +1,903 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <title>MI50 Chat UI - General Purpose</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'Inter', sans-serif; background: #0f172a; color: #e2e8f0; overflow: hidden; font-size: 14px; }
+    .app { display: flex; height: 100vh; width: 100vw; }
+    
+    .sidebar { 
+      width: 300px; 
+      background: #111c33; 
+      border-right: 1px solid #1f2a44; 
+      display: flex; 
+      flex-direction: column;
+      overflow-y: auto;
+      overflow-x: hidden;
+      max-height: 100vh;
+    }
+    .sidebar::-webkit-scrollbar { width: 6px; }
+    .sidebar::-webkit-scrollbar-track { background: #0f172a; }
+    .sidebar::-webkit-scrollbar-thumb { background: #1f2a44; border-radius: 3px; }
+    
+    .sidebar header { padding: 0.8rem; border-bottom: 1px solid #1f2a44; flex-shrink: 0; }
+    .sidebar h1 { margin: 0 0 0.5rem 0; font-size: 1rem; }
+    .model-selector { width: 100%; margin-top: 0.4rem; padding: 0.35rem; border-radius: 4px; border: 1px solid #24304d; background: #0f172a; color: #e2e8f0; font-size: 0.85rem; }
+    .new-chat-btn { width: 100%; margin-top: 0.4rem; padding: 0.5rem; border: none; border-radius: 4px; background: #2563eb; color: white; font-weight: 600; cursor: pointer; font-size: 0.85rem; }
+    
+    .params-panel { padding: 0.6rem 0.8rem; border-bottom: 1px solid #1f2a44; flex-shrink: 0; }
+    .params-panel h3 { margin: 0 0 0.5rem 0; font-size: 0.85rem; color: #94a3b8; }
+    .param-group { margin-bottom: 0.5rem; }
+    .param-group label { display: block; font-size: 0.75rem; color: #94a3b8; margin-bottom: 0.15rem; line-height: 1.2; }
+    .param-group input[type="range"] { 
+      width: 100%; 
+      height: 4px;
+      -webkit-appearance: none;
+      appearance: none;
+      background: #1f2a44;
+      border-radius: 2px;
+      outline: none;
+    }
+    .param-group input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 12px;
+      height: 12px;
+      background: #2563eb;
+      border-radius: 50%;
+      cursor: pointer;
+    }
+    .param-group input[type="range"]::-moz-range-thumb {
+      width: 12px;
+      height: 12px;
+      background: #2563eb;
+      border-radius: 50%;
+      cursor: pointer;
+      border: none;
+    }
+    .param-group input[type="number"] { width: 100%; padding: 0.3rem; border-radius: 3px; border: 1px solid #24304d; background: #0f172a; color: #e2e8f0; font-size: 0.8rem; }
+    .param-value { float: right; color: #e2e8f0; font-weight: 600; font-size: 0.75rem; }
+    
+    .legend-panel { padding: 0.6rem 0.8rem; border-bottom: 1px solid #1f2a44; font-size: 0.7rem; flex-shrink: 0; }
+    .legend-panel h3 { margin: 0 0 0.4rem 0; font-size: 0.85rem; color: #94a3b8; }
+    .legend-panel code { background: #0f172a; padding: 0.1rem 0.3rem; border-radius: 2px; color: #22c55e; font-size: 0.7rem; }
+    .legend-panel .tag-example { margin: 0.2rem 0; line-height: 1.4; }
+    .legend-panel small { font-size: 0.7rem; }
+    
+    .chat-list { flex: 1; overflow-y: auto; padding: 0.4rem 0; min-height: 0; }
+    .chat-list::-webkit-scrollbar { width: 6px; }
+    .chat-list::-webkit-scrollbar-track { background: #0f172a; }
+    .chat-list::-webkit-scrollbar-thumb { background: #1f2a44; border-radius: 3px; }
+    .chat-item { padding: 0.5rem 0.8rem; border-bottom: 1px solid #182341; cursor: pointer; }
+    .chat-item.active { background: #1b2b4d; }
+    .chat-item h3 { margin: 0; font-size: 0.85rem; }
+    .chat-item small { color: #94a3b8; font-size: 0.7rem; }
+    .chat-tags { margin-top: 0.3rem; display: flex; flex-wrap: wrap; gap: 0.2rem; }
+    .tag { background: #1d3557; padding: 0.1rem 0.3rem; border-radius: 999px; font-size: 0.65rem; }
+    
+    .chat-area { 
+      flex: 1; 
+      display: flex; 
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+    .chat-header { 
+      padding: 0.8rem 1.2rem; 
+      border-bottom: 1px solid #1f2a44; 
+      display: flex; 
+      justify-content: space-between; 
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .chat-header h2 { margin: 0; font-size: 1rem; }
+    .chat-meta { color: #94a3b8; font-size: 0.8rem; }
+    
+    .messages { 
+      flex: 1; 
+      overflow-y: auto; 
+      overflow-x: hidden;
+      padding: 1.2rem; 
+      background: #0b152d;
+      min-height: 0;
+    }
+    .messages::-webkit-scrollbar { width: 8px; }
+    .messages::-webkit-scrollbar-track { background: #0b152d; }
+    .messages::-webkit-scrollbar-thumb { background: #1f2a44; border-radius: 4px; }
+    .messages::-webkit-scrollbar-thumb:hover { background: #2a3a5a; }
+    
+    .bubble { max-width: 70%; margin-bottom: 0.8rem; padding: 0.7rem; border-radius: 12px; line-height: 1.4; white-space: pre-wrap; word-wrap: break-word; font-size: 0.9rem; }
+    .bubble.user { background: #1d4ed8; color: white; margin-left: auto; border-bottom-right-radius: 4px; }
+    .bubble.assistant { background: #1e293b; margin-right: auto; border-bottom-left-radius: 4px; }
+    
+    .composer { 
+      padding: 0.8rem 1.2rem; 
+      border-top: 1px solid #1f2a44; 
+      background: #111c33;
+      flex-shrink: 0;
+    }
+    .composer form { display: flex; gap: 0.5rem; }
+    .composer textarea { 
+      flex: 1; 
+      resize: none; 
+      min-height: 50px; 
+      max-height: 120px;
+      border-radius: 8px; 
+      border: 1px solid #24304d; 
+      background: #0f172a; 
+      color: #e2e8f0; 
+      padding: 0.6rem; 
+      font-size: 0.9rem;
+    }
+    .composer button { padding: 0 1.2rem; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 0.85rem; }
+    .composer button.send-btn { background: #22c55e; color: #041019; }
+    .composer button.stop-btn { background: #ef4444; color: white; display: none; }
+    .composer button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .prompt-preview-section { margin-top: 0.5rem; border-top: 1px solid #1f2a44; padding-top: 0.5rem; }
+    .toggle-preview-btn {
+      width: 100%;
+      padding: 0.4rem;
+      border: none;
+      border-radius: 4px;
+      background: #1e293b;
+      color: #94a3b8;
+      font-size: 0.75rem;
+      cursor: pointer;
+      font-weight: 600;
+      transition: background 0.2s;
+    }
+    .toggle-preview-btn:hover { background: #2a3a5a; }
+    .prompt-preview-panel { margin-top: 0.5rem; }
+    .preview-controls {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.3rem;
+      font-size: 0.75rem;
+    }
+    .preview-controls label { color: #94a3b8; cursor: pointer; }
+    .preview-controls input[type="checkbox"] { margin-right: 0.3rem; }
+    .refresh-preview-btn {
+      padding: 0.3rem 0.6rem;
+      border: none;
+      border-radius: 3px;
+      background: #059669;
+      color: white;
+      font-size: 0.7rem;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .refresh-preview-btn:hover { background: #10b981; }
+    .prompt-preview-textarea {
+      width: 100%;
+      min-height: 120px;
+      max-height: 300px;
+      resize: vertical;
+      border-radius: 6px;
+      border: 1px solid #24304d;
+      background: #0b152d;
+      color: #e2e8f0;
+      padding: 0.6rem;
+      font-size: 0.8rem;
+      font-family: 'Courier New', monospace;
+      line-height: 1.4;
+    }
+    .prompt-preview-textarea:read-only {
+      background: #0f1826;
+      color: #94a3b8;
+    }
+    .preview-hint {
+      display: block;
+      margin-top: 0.3rem;
+      color: #64748b;
+      font-size: 0.7rem;
+    }
+
+    @media (max-width: 960px) {
+      .sidebar { display: none; }
+      .app { flex-direction: column; }
+      .chat-area { height: 100vh; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <header>
+        <h1>MI50 Chat</h1>
+        <select id="model-select" class="model-selector"></select>
+        <button class="new-chat-btn" id="new-chat-btn">Nuova chat</button>
+      </header>
+      
+      <div class="params-panel">
+        <h3>⚙️ Parametri</h3>
+        <div class="param-group">
+          <label>Temp <span class="param-value" id="temp-value">0.7</span></label>
+          <input type="range" id="temperature" min="0" max="2" step="0.1" value="0.7">
+        </div>
+        <div class="param-group">
+          <label>Top P <span class="param-value" id="topp-value">0.9</span></label>
+          <input type="range" id="top_p" min="0" max="1" step="0.05" value="0.9">
+        </div>
+        <div class="param-group">
+          <label>Top K <span class="param-value" id="topk-value">50</span></label>
+          <input type="range" id="top_k" min="0" max="100" step="1" value="50">
+        </div>
+        <div class="param-group">
+          <label>Max Tok <span class="param-value" id="maxtokens-value">2048</span></label>
+          <input type="range" id="max_tokens" min="128" max="8192" step="128" value="2048">
+        </div>
+        <div class="param-group">
+          <label>Seed (0=rand)</label>
+          <input type="number" id="seed" min="0" max="999999" value="42" placeholder="42">
+        </div>
+        <div class="param-group">
+          <button id="save-params-btn" style="width: 100%; padding: 0.4rem; border: none; border-radius: 4px; background: #059669; color: white; font-size: 0.75rem; cursor: pointer; font-weight: 600;">💾 Salva Parametri</button>
+        </div>
+      </div>
+      
+      <div class="legend-panel" id="legend-panel">
+        <h3>📖 Tag Modello</h3>
+        <div id="legend-content"></div>
+      </div>
+      
+      <div class="chat-list" id="chat-list"></div>
+    </aside>
+
+    <section class="chat-area">
+      <div class="chat-header">
+        <div>
+          <h2 id="chat-title">Seleziona una chat</h2>
+          <div class="chat-meta" id="chat-meta">Modello: --</div>
+        </div>
+        <div id="chat-tags"></div>
+      </div>
+      <div class="messages" id="messages"></div>
+      <div class="composer">
+        <form id="prompt-form">
+          <textarea id="prompt-input" placeholder="Scrivi il prompt..." required></textarea>
+          <button type="submit" id="send-btn" class="send-btn">Invia</button>
+          <button type="button" id="stop-btn" class="stop-btn">Stop</button>
+        </form>
+
+        <!-- Prompt Preview/Edit Section -->
+        <div class="prompt-preview-section">
+          <button type="button" id="toggle-preview-btn" class="toggle-preview-btn">
+            🔍 Preview Prompt Finale
+          </button>
+          <div id="prompt-preview-panel" class="prompt-preview-panel" style="display: none;">
+            <div class="preview-controls">
+              <label>
+                <input type="checkbox" id="enable-edit-checkbox">
+                Abilita modifica manuale
+              </label>
+              <button type="button" id="refresh-preview-btn" class="refresh-preview-btn">🔄 Aggiorna</button>
+            </div>
+            <textarea id="prompt-preview" class="prompt-preview-textarea" readonly></textarea>
+            <small class="preview-hint">👆 Questo è il prompt formattato che verrà inviato al modello</small>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const models = [
+      {
+        label: 'Gemma 7B',
+        value: '/mnt/raid0/gemma-7b',
+        legend: '<div class="tag-example"><code>&lt;start_of_turn&gt;user</code> msg <code>&lt;end_of_turn&gt;</code></div><div class="tag-example"><code>&lt;start_of_turn&gt;model</code> risp <code>&lt;end_of_turn&gt;</code></div><small>⚠️ No system separato</small>'
+      },
+      {
+        label: 'Gemma3 4B IT',
+        value: '/mnt/raid0/gemma3-4b-it',
+        legend: '<div class="tag-example"><code>&lt;start_of_turn&gt;user</code> msg <code>&lt;end_of_turn&gt;</code></div><div class="tag-example"><code>&lt;start_of_turn&gt;model</code> risp <code>&lt;end_of_turn&gt;</code></div><small>⚠️ No system separato</small>'
+      },
+      {
+        label: 'Qwen2.5 Coder 7B',
+        value: '/mnt/raid0/qwen2.5-coder-7b-instruct',
+        legend: '<div class="tag-example"><code>&lt;|im_start|&gt;system</code> istr <code>&lt;|im_end|&gt;</code></div><div class="tag-example"><code>&lt;|im_start|&gt;user</code> dom <code>&lt;|im_end|&gt;</code></div><div class="tag-example"><code>&lt;|im_start|&gt;assistant</code> risp <code>&lt;|im_end|&gt;</code></div>'
+      },
+      {
+        label: 'Qwen2.5 Coder 14B',
+        value: '/mnt/raid0/qwen2.5-coder-14b-instruct',
+        legend: '<div class="tag-example"><code>&lt;|im_start|&gt;system</code> istr <code>&lt;|im_end|&gt;</code></div><div class="tag-example"><code>&lt;|im_start|&gt;user</code> dom <code>&lt;|im_end|&gt;</code></div><div class="tag-example"><code>&lt;|im_start|&gt;assistant</code> risp <code>&lt;|im_end|&gt;</code></div>'
+      },
+      {
+        label: 'StarCoder2 7B',
+        value: '/mnt/raid0/starcoder2-7b',
+        legend: '<div class="tag-example">⚙️ <strong>Raw Code Mode</strong></div><small>✅ Nessun tag richiesto - Input diretto codice</small><br><small>💡 Es: <code>def fibonacci(n):</code> → continua il codice</small>'
+      }
+    ];
+
+    const chatListEl = document.getElementById('chat-list');
+    const messagesEl = document.getElementById('messages');
+    const promptForm = document.getElementById('prompt-form');
+    const promptInput = document.getElementById('prompt-input');
+    const sendBtn = document.getElementById('send-btn');
+    const stopBtn = document.getElementById('stop-btn');
+    const chatTitleEl = document.getElementById('chat-title');
+    const chatMetaEl = document.getElementById('chat-meta');
+    const chatTagsEl = document.getElementById('chat-tags');
+    const modelSelect = document.getElementById('model-select');
+    const newChatBtn = document.getElementById('new-chat-btn');
+    const legendContent = document.getElementById('legend-content');
+    
+    const tempSlider = document.getElementById('temperature');
+    const tempValue = document.getElementById('temp-value');
+    const toppSlider = document.getElementById('top_p');
+    const toppValue = document.getElementById('topp-value');
+    const topkSlider = document.getElementById('top_k');
+    const topkValue = document.getElementById('topk-value');
+    const maxTokensSlider = document.getElementById('max_tokens');
+    const maxTokensValue = document.getElementById('maxtokens-value');
+    const seedInput = document.getElementById('seed');
+
+    let chats = [];
+    let currentChatId = null;
+    let streamingController = null;
+    let isProcessing = false;
+
+    models.forEach(function(m, idx) {
+      var opt = document.createElement('option');
+      opt.value = m.value;
+      opt.textContent = m.label;
+      if (idx === 0) opt.selected = true;
+      modelSelect.appendChild(opt);
+    });
+    
+    function updateLegend() {
+      var selectedModel = models.find(function(m) { return m.value === modelSelect.value; });
+      if (selectedModel) {
+        legendContent.innerHTML = selectedModel.legend;
+      }
+    }
+    
+    modelSelect.addEventListener('change', updateLegend);
+    updateLegend();
+
+    tempSlider.addEventListener('input', function() { tempValue.textContent = this.value; });
+    toppSlider.addEventListener('input', function() { toppValue.textContent = this.value; });
+    topkSlider.addEventListener('input', function() { topkValue.textContent = this.value; });
+    maxTokensSlider.addEventListener('input', function() { maxTokensValue.textContent = this.value; });
+
+    // Salvataggio e caricamento parametri
+    function saveParams() {
+      var params = {
+        temperature: parseFloat(tempSlider.value),
+        top_p: parseFloat(toppSlider.value),
+        top_k: parseInt(topkSlider.value),
+        max_tokens: parseInt(maxTokensSlider.value),
+        seed: parseInt(seedInput.value)
+      };
+      localStorage.setItem('mi50_chat_params', JSON.stringify(params));
+      console.log('[saveParams] Parametri salvati:', params);
+
+      // Feedback visivo
+      var btn = document.getElementById('save-params-btn');
+      var originalText = btn.textContent;
+      btn.textContent = '✅ Salvati!';
+      btn.style.background = '#10b981';
+      setTimeout(function() {
+        btn.textContent = originalText;
+        btn.style.background = '#059669';
+      }, 1500);
+    }
+
+    function loadParams() {
+      var saved = localStorage.getItem('mi50_chat_params');
+      if (saved) {
+        try {
+          var params = JSON.parse(saved);
+          console.log('[loadParams] Parametri caricati:', params);
+
+          if (params.temperature !== undefined) {
+            tempSlider.value = params.temperature;
+            tempValue.textContent = params.temperature;
+          }
+          if (params.top_p !== undefined) {
+            toppSlider.value = params.top_p;
+            toppValue.textContent = params.top_p;
+          }
+          if (params.top_k !== undefined) {
+            topkSlider.value = params.top_k;
+            topkValue.textContent = params.top_k;
+          }
+          if (params.max_tokens !== undefined) {
+            maxTokensSlider.value = params.max_tokens;
+            maxTokensValue.textContent = params.max_tokens;
+          }
+          if (params.seed !== undefined) {
+            seedInput.value = params.seed;
+          }
+        } catch (err) {
+          console.error('[loadParams ERROR]', err);
+        }
+      }
+    }
+
+    document.getElementById('save-params-btn').addEventListener('click', saveParams);
+
+    // Carica parametri salvati all'avvio
+    loadParams();
+
+    // ═══════════════════════════════════════════════════════════════
+    // PROMPT PREVIEW/EDIT FUNCTIONALITY
+    // ═══════════════════════════════════════════════════════════════
+
+    var togglePreviewBtn = document.getElementById('toggle-preview-btn');
+    var previewPanel = document.getElementById('prompt-preview-panel');
+    var previewTextarea = document.getElementById('prompt-preview');
+    var enableEditCheckbox = document.getElementById('enable-edit-checkbox');
+    var refreshPreviewBtn = document.getElementById('refresh-preview-btn');
+
+    // Toggle visibility preview panel
+    togglePreviewBtn.addEventListener('click', function() {
+      var isVisible = previewPanel.style.display !== 'none';
+      previewPanel.style.display = isVisible ? 'none' : 'block';
+      togglePreviewBtn.textContent = isVisible ? '🔍 Preview Prompt Finale' : '❌ Nascondi Preview';
+
+      if (!isVisible) {
+        updatePromptPreview();
+      }
+    });
+
+    // Enable/disable editing
+    enableEditCheckbox.addEventListener('change', function() {
+      previewTextarea.readOnly = !this.checked;
+      if (this.checked) {
+        previewTextarea.style.background = '#0b152d';
+        previewTextarea.style.color = '#e2e8f0';
+      } else {
+        previewTextarea.style.background = '#0f1826';
+        previewTextarea.style.color = '#94a3b8';
+      }
+    });
+
+    // Refresh preview manually
+    refreshPreviewBtn.addEventListener('click', function() {
+      updatePromptPreview();
+    });
+
+    // Auto-update preview when user types (debounced)
+    var previewUpdateTimeout;
+    promptInput.addEventListener('input', function() {
+      if (previewPanel.style.display === 'none') return;
+
+      clearTimeout(previewUpdateTimeout);
+      previewUpdateTimeout = setTimeout(function() {
+        if (!enableEditCheckbox.checked) {
+          updatePromptPreview();
+        }
+      }, 500);
+    });
+
+    // Client-side prompt formatting (mirrors server logic)
+    function formatPromptClientSide(modelPath, messages) {
+      var modelLower = modelPath.toLowerCase();
+      var family = 'generic';
+
+      if (modelLower.indexOf('gemma') !== -1) {
+        family = 'gemma3';
+      } else if (modelLower.indexOf('qwen') !== -1) {
+        family = 'qwen';
+      } else if (modelLower.indexOf('starcoder') !== -1 || modelLower.indexOf('star-coder') !== -1) {
+        family = 'starcoder';
+      }
+
+      if (family === 'gemma3') {
+        return formatGemma3Prompt(messages);
+      } else if (family === 'qwen') {
+        return formatQwenPrompt(messages);
+      } else if (family === 'starcoder') {
+        return formatStarcoderPrompt(messages);
+      } else {
+        return formatGenericPrompt(messages);
+      }
+    }
+
+    function formatGemma3Prompt(messages) {
+      var parts = [];
+      var systemMsg = null;
+      var otherMessages = [];
+
+      messages.forEach(function(msg) {
+        if (msg.role === 'system') {
+          systemMsg = msg.content;
+        } else {
+          otherMessages.push(msg);
+        }
+      });
+
+      if (systemMsg && otherMessages.length > 0 && otherMessages[0].role === 'user') {
+        parts.push('<start_of_turn>user\\n');
+        parts.push(systemMsg);
+        parts.push('\\n\\n');
+        parts.push(otherMessages[0].content);
+        parts.push('<end_of_turn>\\n');
+        otherMessages = otherMessages.slice(1);
+      } else if (systemMsg) {
+        parts.push('<start_of_turn>user\\n');
+        parts.push(systemMsg);
+        parts.push('<end_of_turn>\\n');
+      }
+
+      otherMessages.forEach(function(msg) {
+        if (msg.role === 'user') {
+          parts.push('<start_of_turn>user\\n');
+          parts.push(msg.content);
+          parts.push('<end_of_turn>\\n');
+        } else if (msg.role === 'assistant' || msg.role === 'model') {
+          parts.push('<start_of_turn>model\\n');
+          parts.push(msg.content);
+          parts.push('<end_of_turn>\\n');
+        }
+      });
+
+      parts.push('<start_of_turn>model\\n');
+      return parts.join('');
+    }
+
+    function formatQwenPrompt(messages) {
+      var parts = [];
+
+      messages.forEach(function(msg) {
+        var role = msg.role === 'model' ? 'assistant' : msg.role;
+        parts.push('<|im_start|>' + role + '\\n');
+        parts.push(msg.content);
+        parts.push('<|im_end|>\\n');
+      });
+
+      parts.push('<|im_start|>assistant\\n');
+      return parts.join('');
+    }
+
+    function formatStarcoderPrompt(messages) {
+      // StarCoder: solo ultimo messaggio user, raw code, nessun tag
+      for (var i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === 'user') {
+          return messages[i].content;
+        }
+      }
+      return '';
+    }
+
+    function formatGenericPrompt(messages) {
+      var lines = [];
+      messages.forEach(function(msg) {
+        lines.push(msg.role.toUpperCase() + ': ' + msg.content);
+      });
+      lines.push('ASSISTANT:');
+      return lines.join('\\n');
+    }
+
+    function updatePromptPreview() {
+      if (!currentChatId) {
+        previewTextarea.value = '[Nessuna chat selezionata - il preview sarà disponibile dopo l\'invio del primo messaggio]';
+        return;
+      }
+
+      var currentChat = chats.find(function(c) { return c.id === currentChatId; });
+      if (!currentChat) {
+        previewTextarea.value = '[Chat non trovata]';
+        return;
+      }
+
+      var userInput = promptInput.value.trim();
+      if (!userInput) {
+        previewTextarea.value = '[Scrivi un messaggio per vedere il preview]';
+        return;
+      }
+
+      // Costruisci array messaggi includendo input corrente
+      var messages = (currentChat.messages || []).slice();
+      messages.push({ role: 'user', content: userInput });
+
+      // Formatta usando logica client-side
+      var formattedPrompt = formatPromptClientSide(modelSelect.value, messages);
+      previewTextarea.value = formattedPrompt;
+
+      console.log('[Preview] Aggiornato prompt preview (' + formattedPrompt.length + ' caratteri)');
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // END PROMPT PREVIEW/EDIT
+    // ═══════════════════════════════════════════════════════════════
+
+    function getGenerationParams() {
+      return {
+        temperature: parseFloat(tempSlider.value),
+        top_p: parseFloat(toppSlider.value),
+        top_k: parseInt(topkSlider.value),
+        max_new_tokens: parseInt(maxTokensSlider.value),
+        seed: parseInt(seedInput.value) || null
+      };
+    }
+
+    function fetchJSON(url, opts) {
+      if (!opts) opts = {};
+      console.log('[FETCH]', opts.method || 'GET', url);
+      return fetch(url, opts).then(function(res) {
+        if (!res.ok) {
+          console.error('[FETCH ERROR]', res.status, url);
+          throw new Error('HTTP ' + res.status);
+        }
+        return res.json();
+      });
+    }
+
+    function loadChats() {
+      console.log('[loadChats] Caricamento lista chat...');
+      return fetchJSON('/api/chats').then(function(data) {
+        chats = data.chats;
+        console.log('[loadChats] Caricate', chats.length, 'chat');
+        renderChatList();
+      }).catch(function(err) {
+        console.error('[loadChats ERROR]', err);
+      });
+    }
+
+    function renderChatList() {
+      chatListEl.innerHTML = '';
+      if (!chats.length) {
+        var empty = document.createElement('div');
+        empty.style.padding = '0.8rem';
+        empty.style.color = '#94a3b8';
+        empty.textContent = 'Nessuna chat';
+        chatListEl.appendChild(empty);
+        return;
+      }
+      chats.forEach(function(chat) {
+        var div = document.createElement('div');
+        div.className = 'chat-item' + (chat.id === currentChatId ? ' active' : '');
+        div.innerHTML = '<h3>' + escapeHtml(chat.title) + '</h3><small>' + new Date(chat.updated_at).toLocaleString() + '</small>';
+        if (chat.tags && chat.tags.length) {
+          var tags = document.createElement('div');
+          tags.className = 'chat-tags';
+          chat.tags.forEach(function(tag) {
+            var t = document.createElement('span');
+            t.className = 'tag';
+            t.textContent = tag;
+            tags.appendChild(t);
+          });
+          div.appendChild(tags);
+        }
+        div.addEventListener('click', function() { selectChat(chat.id); });
+        chatListEl.appendChild(div);
+      });
+    }
+
+    function escapeHtml(text) {
+      var div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function selectChat(chatId) {
+      console.log('[selectChat]', chatId);
+      return fetchJSON('/api/chats/' + chatId).then(function(data) {
+        var chat = data.chat;
+        currentChatId = chatId;
+        chatTitleEl.textContent = chat.title;
+        chatMetaEl.textContent = 'Modello: ' + chat.model;
+        chatTagsEl.innerHTML = '';
+        (chat.tags || []).forEach(function(tag) {
+          var span = document.createElement('span');
+          span.className = 'tag';
+          span.textContent = tag;
+          chatTagsEl.appendChild(span);
+        });
+        renderMessages(chat.messages || []);
+        renderChatList();
+      }).catch(function(err) {
+        console.error('[selectChat ERROR]', err);
+      });
+    }
+
+    function renderMessages(messages) {
+      console.log('[renderMessages]', messages.length, 'messaggi');
+      messagesEl.innerHTML = '';
+      messages.forEach(function(msg) { addBubble(msg.role, msg.content); });
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    function addBubble(role, content, tempId) {
+      var bubble = tempId ? document.getElementById(tempId) : null;
+      if (!bubble) {
+        bubble = document.createElement('div');
+        bubble.className = 'bubble ' + (role === 'user' ? 'user' : 'assistant');
+        if (tempId) bubble.id = tempId;
+        messagesEl.appendChild(bubble);
+      }
+      bubble.textContent = content;
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    function ensureChatExists() {
+      if (currentChatId) {
+        console.log('[ensureChatExists] Chat già esistente:', currentChatId);
+        return Promise.resolve(currentChatId);
+      }
+      console.log('[ensureChatExists] Creo nuova chat...');
+      var payload = { model: modelSelect.value };
+      return fetchJSON('/api/chats', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }).then(function(data) {
+        currentChatId = data.chat.id;
+        console.log('[ensureChatExists] Creata chat:', currentChatId);
+        return loadChats().then(function() {
+          return selectChat(currentChatId);
+        }).then(function() {
+          return currentChatId;
+        });
+      }).catch(function(err) {
+        console.error('[ensureChatExists ERROR]', err);
+        throw err;
+      });
+    }
+
+    promptForm.addEventListener('submit', function(event) {
+      event.preventDefault();
+      console.log('[SUBMIT] Form inviato');
+      
+      if (isProcessing) {
+        console.log('[SUBMIT] Già in elaborazione, ignoro');
+        return;
+      }
+      
+      var text = promptInput.value.trim();
+      if (!text) {
+        console.log('[SUBMIT] Testo vuoto, ignoro');
+        return;
+      }
+      
+      console.log('[SUBMIT] Testo:', text);
+      console.log('[SUBMIT] Parametri:', getGenerationParams());
+      isProcessing = true;
+      sendBtn.disabled = true;
+      
+      ensureChatExists().then(function() {
+        console.log('[SUBMIT] Chat pronta, invio messaggio');
+        addBubble('user', text);
+        promptInput.value = '';
+        promptInput.focus();
+        streamResponse(text);
+      }).catch(function(err) {
+        console.error('[SUBMIT ERROR]', err);
+        alert('Errore durante la creazione/selezione della chat: ' + err.message);
+        isProcessing = false;
+        sendBtn.disabled = false;
+      });
+    });
+
+    stopBtn.addEventListener('click', function() {
+      console.log('[STOP] Interruzione stream richiesta');
+      if (streamingController) {
+        streamingController.abort();
+      }
+    });
+
+    function streamResponse(prompt) {
+      if (!currentChatId) {
+        console.error('[streamResponse] Nessuna chat selezionata!');
+        isProcessing = false;
+        sendBtn.disabled = false;
+        return;
+      }
+      
+      console.log('[streamResponse] Invio a chat:', currentChatId);
+      
+      sendBtn.style.display = 'none';
+      stopBtn.style.display = 'block';
+      
+      if (streamingController) streamingController.abort();
+      streamingController = new AbortController();
+      var tempId = 'assistant-' + Date.now();
+      addBubble('assistant', '', tempId);
+      
+      var payload = {
+        prompt: prompt,
+        options: getGenerationParams()
+      };
+
+      // Se editing manuale è abilitato, usa il prompt editato invece di quello auto-generato
+      if (enableEditCheckbox.checked && previewTextarea.value.trim()) {
+        payload.raw_prompt = previewTextarea.value;
+        console.log('[streamResponse] Usando raw_prompt editato manualmente (' + payload.raw_prompt.length + ' caratteri)');
+      }
+
+      fetch('/api/chats/' + currentChatId + '/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: streamingController.signal
+      }).then(function(res) {
+        console.log('[streamResponse] Risposta ricevuta:', res.status);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        var reader = res.body.getReader();
+        var decoder = new TextDecoder();
+        var buffer = '';
+        var fullText = '';
+        
+        function processChunk() {
+          return reader.read().then(function(result) {
+            if (result.done) {
+              console.log('[streamResponse] Stream completato');
+              return;
+            }
+            
+            buffer += decoder.decode(result.value, { stream: true });
+            var lines = buffer.split('\n');
+            buffer = lines.pop();
+            
+            lines.forEach(function(line) {
+              if (!line.trim()) return;
+              try {
+                var data = JSON.parse(line);
+                if (data.error) {
+                  console.error('[streamResponse] Errore dal server:', data.error);
+                  addBubble('assistant', 'Errore: ' + data.error, tempId);
+                } else if (data.response) {
+                  fullText += data.response;
+                  addBubble('assistant', fullText, tempId);
+                }
+              } catch (err) {
+                console.error('[streamResponse] Errore parsing JSON:', err, 'Line:', line);
+              }
+            });
+            
+            return processChunk();
+          });
+        }
+        
+        return processChunk();
+      }).catch(function(err) {
+        if (err.name === 'AbortError') {
+          console.log('[streamResponse] Stream abortito dall\'utente');
+          var bubble = document.getElementById(tempId);
+          if (bubble && !bubble.textContent.trim()) {
+            addBubble('assistant', '[Generazione interrotta]', tempId);
+          }
+        } else {
+          console.error('[streamResponse ERROR]', err);
+          addBubble('assistant', 'Errore: ' + err.message, tempId);
+        }
+      }).finally(function() {
+        console.log('[streamResponse] Finalizzo...');
+        streamingController = null;
+        isProcessing = false;
+        
+        sendBtn.disabled = false;
+        sendBtn.style.display = 'block';
+        stopBtn.style.display = 'none';
+        
+        loadChats().then(function() {
+          if (currentChatId) selectChat(currentChatId);
+        });
+      });
+    }
+
+    newChatBtn.addEventListener('click', function() {
+      console.log('[newChat] Creo nuova chat');
+      currentChatId = null;
+      chatTitleEl.textContent = 'Nuova chat';
+      chatMetaEl.textContent = 'Modello: --';
+      messagesEl.innerHTML = '';
+      promptInput.focus();
+    });
+
+    console.log('[INIT] Caricamento iniziale...');
+    loadChats();
+  </script>
+</body>
+</html>

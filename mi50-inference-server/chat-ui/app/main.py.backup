@@ -1,0 +1,130 @@
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import httpx
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
+from .storage import ChatStorage
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+STATIC_DIR = BASE_DIR / "static"
+DATA_PATH = BASE_DIR / "chat_state.json"
+
+INFERENCE_URL = os.environ.get("MI50_SERVER_URL", "http://127.0.0.1:11534").rstrip("/")
+DEFAULT_MODEL = os.environ.get("CHAT_UI_DEFAULT_MODEL", "Qwen/Qwen2.5-7B-Instruct")
+
+app = FastAPI(title="MI50 Chat UI", docs_url=None, redoc_url=None)
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+storage = ChatStorage(DATA_PATH, DEFAULT_MODEL)
+
+
+class ChatCreateRequest(BaseModel):
+    title: Optional[str] = None
+    model: Optional[str] = None
+
+
+class RenameRequest(BaseModel):
+    title: str
+
+
+class SendMessageRequest(BaseModel):
+    prompt: str
+
+
+@app.on_event("startup")
+async def startup() -> None:
+    app.state.http = httpx.AsyncClient(timeout=None)
+
+
+@app.on_event("shutdown")
+async def shutdown() -> None:
+    client: httpx.AsyncClient = app.state.http
+    await client.aclose()
+
+
+@app.get("/", response_class=HTMLResponse)
+async def index() -> str:
+    return (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+
+
+@app.get("/api/chats")
+async def list_chats() -> Dict[str, Any]:
+    return {"chats": storage.list_chats()}
+
+
+@app.post("/api/chats")
+async def create_chat(payload: ChatCreateRequest) -> Dict[str, Any]:
+    chat = storage.create_chat(title=payload.title, model=payload.model)
+    return {"chat": chat}
+
+
+@app.get("/api/chats/{chat_id}")
+async def get_chat(chat_id: str) -> Dict[str, Any]:
+    chat = storage.get_chat(chat_id)
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat non trovata")
+    return {"chat": chat}
+
+
+@app.post("/api/chats/{chat_id}/rename")
+async def rename_chat(chat_id: str, payload: RenameRequest) -> Dict[str, Any]:
+    try:
+        storage.update_title(chat_id, payload.title)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Chat non trovata") from None
+    return {"status": "ok"}
+
+
+@app.post("/api/chats/{chat_id}/send")
+async def send_message(chat_id: str, payload: SendMessageRequest, request: Request) -> StreamingResponse:
+    try:
+        chat = storage.ensure_chat(chat_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Chat non trovata") from None
+
+    storage.append_message(chat_id, "user", payload.prompt)
+
+    messages = storage.to_openai_messages(chat_id)
+    request_payload = {
+        "model": chat["model"],
+        "messages": messages,
+        "stream": True,
+    }
+
+    client: httpx.AsyncClient = request.app.state.http
+
+    async def stream() -> Any:
+        assistant_chunks: List[str] = []
+        error_text: Optional[str] = None
+        try:
+            async with client.stream("POST", f"{INFERENCE_URL}/api/chat", json=request_payload) as resp:
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    if not line:
+                        continue
+                    try:
+                        data = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    delta = data.get("response") or data.get("delta")
+                    if delta:
+                        assistant_chunks.append(delta)
+                    yield json.dumps(data, ensure_ascii=False) + "\n"
+        except httpx.HTTPError as exc:
+            error_text = f"Errore backend: {exc}"
+            yield json.dumps({"error": error_text}, ensure_ascii=False) + "\n"
+        finally:
+            text = "".join(assistant_chunks)
+            if not text and error_text:
+                text = error_text
+            storage.append_message(chat_id, "assistant", text)
+
+    return StreamingResponse(stream(), media_type="application/x-ndjson")

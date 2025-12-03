@@ -1,0 +1,10 @@
+INFO:     Started server process [72915]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:13010 (Press CTRL+C to quit)
+INFO:     192.168.1.150:54902 - "GET /api/chats HTTP/1.1" 200 OK
+INFO:     192.168.1.150:42190 - "GET /api/chats/36908b39fa3644b2a62578808b0e6501/tokens HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [72915]

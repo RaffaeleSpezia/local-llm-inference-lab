@@ -1,0 +1,142 @@
+from __future__ import annotations
+
+import json
+import threading
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+
+def now_iso() -> str:
+    return (
+        datetime.now(timezone.utc)
+        .isoformat(timespec="milliseconds")
+        .replace("+00:00", "Z")
+    )
+
+
+def _default_title(model: str) -> str:
+    name = model.split("/")[-1]
+    return f"Sessione {name}"
+
+
+def _auto_tags(text: str, model: str) -> List[str]:
+    tags = {model.split("/")[-1]}
+    lowered = text.lower()
+    keywords = {
+        "esp32": "ESP32",
+        "esp-idf": "ESP32",
+        "arduino": "Arduino",
+        "python": "Python",
+        "raspberry": "Raspberry",
+        "modbus": "Modbus",
+        "termocoppia": "Sensori",
+    }
+    for key, label in keywords.items():
+        if key in lowered:
+            tags.add(label)
+    if "http" in lowered or "web" in lowered:
+        tags.add("Web")
+    if any(tok in lowered for tok in ("codice", "code", "programma")):
+        tags.add("Codice")
+    return sorted(tags)
+
+
+class ChatStorage:
+    def __init__(self, path: Path, default_model: str) -> None:
+        self.path = path
+        self.default_model = default_model
+        self.lock = threading.Lock()
+        self._data: Dict[str, Any] = {"chats": []}
+        self._load()
+
+    def _load(self) -> None:
+        if self.path.exists():
+            try:
+                self._data = json.loads(self.path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                self._data = {"chats": []}
+        else:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self._data = {"chats": []}
+
+    def _save(self) -> None:
+        tmp = self.path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(self._data, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(self.path)
+
+    def list_chats(self) -> List[Dict[str, Any]]:
+        with self.lock:
+            return [
+                {
+                    "id": chat["id"],
+                    "title": chat["title"],
+                    "model": chat["model"],
+                    "tags": chat.get("tags", []),
+                    "updated_at": chat.get("updated_at", chat.get("created_at")),
+                }
+                for chat in self._data["chats"]
+            ]
+
+    def _find_chat(self, chat_id: str) -> Optional[Dict[str, Any]]:
+        for chat in self._data["chats"]:
+            if chat["id"] == chat_id:
+                return chat
+        return None
+
+    def get_chat(self, chat_id: str) -> Optional[Dict[str, Any]]:
+        with self.lock:
+            return self._find_chat(chat_id)
+
+    def create_chat(self, title: Optional[str] = None, model: Optional[str] = None) -> Dict[str, Any]:
+        chat = {
+            "id": uuid.uuid4().hex,
+            "title": title or _default_title(model or self.default_model),
+            "model": model or self.default_model,
+            "tags": [],
+            "created_at": now_iso(),
+            "updated_at": now_iso(),
+            "messages": [],
+        }
+        with self.lock:
+            self._data["chats"].insert(0, chat)
+            self._save()
+        return chat
+
+    def append_message(self, chat_id: str, role: str, content: str) -> Dict[str, Any]:
+        with self.lock:
+            chat = self._find_chat(chat_id)
+            if not chat:
+                raise KeyError("Chat non trovata")
+            entry = {"role": role, "content": content, "ts": now_iso()}
+            chat["messages"].append(entry)
+            chat["updated_at"] = now_iso()
+            if role == "user":
+                chat.setdefault("tags", [])
+                new_tags = _auto_tags(content, chat["model"])
+                chat["tags"] = sorted(set(chat["tags"]) | set(new_tags))
+            self._save()
+            return entry
+
+    def update_title(self, chat_id: str, title: str) -> None:
+        with self.lock:
+            chat = self._find_chat(chat_id)
+            if not chat:
+                raise KeyError("Chat non trovata")
+            chat["title"] = title
+            chat["updated_at"] = now_iso()
+            self._save()
+
+    def ensure_chat(self, chat_id: str) -> Dict[str, Any]:
+        chat = self._find_chat(chat_id)
+        if not chat:
+            raise KeyError("Chat non trovata")
+        return chat
+
+    def to_openai_messages(self, chat_id: str) -> List[Dict[str, str]]:
+        chat = self.ensure_chat(chat_id)
+        return [
+            {"role": msg["role"], "content": msg["content"]}
+            for msg in chat.get("messages", [])
+        ]
